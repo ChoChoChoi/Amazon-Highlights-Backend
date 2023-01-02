@@ -3,7 +3,7 @@
 
 var request = require('request');
 
-// search 예제
+// search 파라미터 설정
 var optionParams={
     part:"snippet",
     key:"AIzaSyAvZuCRcx7sWA-OUiPjkml_Xv3F4aNXGEc",
