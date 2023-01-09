@@ -1,9 +1,6 @@
 # Amazon-Highlights-Backend
 
-## Local
+## Local PoC
 1. Youtube Data API v3 (youtubedownload.py)
 2. Wordpress Crawler (BlogCrawler.js)
-
-## Lambda
-1. TBD
-2. TBD
+3. ML Deploy to AWS SageMaker (samsum_deploy.py)
