@@ -100,8 +100,8 @@ def upload_file(file_name, bucket, key, object_name=None):
 
     # Upload the file
     try:
-        response = s3.put_object(Bucket=bucket, Key=key+'/'+file_name)
-        # response = s3.upload_file(file_name, bucket, object_name)
+        # response = s3.put_object(Bucket=bucket, Key=key+'/'+file_name)
+        response = s3.upload_file(file_name, bucket, key+'/'+object_name)
     except ClientError as e:
         logging.error(e)
         return False
