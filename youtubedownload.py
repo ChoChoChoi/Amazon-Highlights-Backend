@@ -1,4 +1,6 @@
-# Install the packages
+# Required packages
+# (1) Add layer - https://aws.amazon.com/ko/premiumsupport/knowledge-center/lambda-import-module-error-python/
+# (2) CDK requirements
 # !pip install --upgrade google-api-python-client
 # !pip install oauth2client
 # !pip install -U yt-dlp
@@ -8,10 +10,19 @@
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from oauth2client.tools import argparser
-import youtube_dl
+from botocore.exceptions import ClientError
 import os
+import subprocess
+import boto3
+from datetime import datetime, timezone
+from dateutil.relativedelta import relativedelta
 
-# YouTube API Parameter
+# connect s3
+s3 = boto3.client('s3')
+bucket = 'youtubeweekly'
+# BUCKET_ARN = os.environ['BUCKET_ARN']
+
+# YouTube DATA API v3 Parameter - https://developers.google.com/youtube/v3/docs/
 def build_youtube_search(developer_key):
     DEVELOPER_KEY = developer_key
     YOUTUBE_API_SERVICE_NAME="youtube"
@@ -19,11 +30,12 @@ def build_youtube_search(developer_key):
     return build(YOUTUBE_API_SERVICE_NAME,YOUTUBE_API_VERSION,developerKey=DEVELOPER_KEY)
     
 # Search Parameter
-def get_search_response(youtube):
+def get_search_response(youtube, lastcall):
   search_response = youtube.search().list(
     order = "date",
     part = "snippet",
-    maxResults = 2,
+    publishedAfter = lastcall,
+    maxResults = 10,
     channelId = "UCdoadna9HFHsxXWhafhNvKw"
     ).execute()
   return search_response
@@ -59,27 +71,73 @@ def get_video_id(search_response):
 # Download video - https://github.com/ytdl-org/youtube-dl/blob/master/youtube_dl/__init__.py
 def download_video(video_id):
     url = 'https://youtube.com/watch?v='
-    output = os.path.join('./', '%(title)s.%(ext)s')
+    # output = os.path.join('/tmp/youtubevideos/', '%(title)s.%(ext)s')
     for id in video_id:
-        video = str(url+id)
-        ydl_opts = {
-            'format' : 'bestaudio/best',
-            'nocheckcertificate' : 'True',
-            'outtmpl' : output,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '320',
-
-            }],
-        }
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video])
+      subprocess.call('yt-dlp -f bestvideo+bestaudio --merge-output-format mp4 https://www.youtube.com/watch\?v\='+id, shell="True")
+    # for id in video_id:
+    #     video = str(url+id)
+    #     ydl_opts = {
+    #         'format' : 'bestaudio/best',
+    #         'nocheckcertificate' : 'True',
+    #         'postprocessors': [{
+    #           'key': 'FFmpegExtractAudio',
+    #           'preferredcodec': 'mp3',
+    #           'preferredquality': '320',
+    #       }],
+    #         'outtmpl' : output,
+    #     }
+    #     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+    #         ydl.download([video])
             
-        print(video + ': Download Completed')
-        
-# Main
+    #     print(video + ': Download Completed')
+
+# upload file to s3 - need to add permission
+def upload_file(file_name, bucket, key, object_name=None):
+
+    # If S3 object_name was not specified, use file_name
+    if object_name is None:
+        object_name = os.path.basename(file_name)
+
+    # Upload the file
+    try:
+        response = s3.put_object(Bucket=bucket, Key=key+'/'+file_name)
+        # response = s3.upload_file(file_name, bucket, object_name)
+    except ClientError as e:
+        logging.error(e)
+        return False
+    return True
+    
+
+#def lambda_handler(event, context):
+
+# get the date 7 days ago 
+d = datetime.now() + relativedelta(days=-7)
+lastcall = str(d.isoformat('T'))[0:19] + 'Z'
+
+t = datetime.now()
+today = str(t.isoformat('T'))[0:19] + 'Z'
+    
+# get video info
 youtube = build_youtube_search("AIzaSyAvZuCRcx7sWA-OUiPjkml_Xv3F4aNXGEc")
-response = get_search_response(youtube)
-id_list = get_video_id(response)
-download_video(id_list)
+video_info = get_search_response(youtube, lastcall)
+video_id = get_video_id(video_info)
+
+# make a directory
+if not os.path.exists(os.path.join(today)):
+ os.makedirs(today)
+
+# change current directory (default: /var/task)
+os.chdir(today)
+
+# download video - Time out
+download_video(video_id)
+tmp = os.listdir('./')
+
+# upload video to s3 - Need multi part upload (more than 100 MB)
+for item in tmp:
+  upload_file(item, bucket, today, item)
+    
+# Remove video
+os.chdir('..')
+subprocess.call('sudo rm -rf '+today, shell="True")
+    #return tmp
